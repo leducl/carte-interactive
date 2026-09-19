@@ -1,0 +1,11 @@
+{
+  "name": "carte-interactive-new-york",
+  "version": "1.0.0",
+  "description": "Carte collaborative des lieux à voir à New York, avec génération automatique d'itinéraires à pied et en métro.",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": { "node": ">=18" }
+}

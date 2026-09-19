@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Carte Interactive New York</title>
+<meta name="description" content="Carte collaborative des points à voir à New York, avec génération automatique d'itinéraires à pied et en métro.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗽</text></svg>">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="login" class="login-screen">
+  <form class="login-card" id="loginForm">
+    <div class="login-emoji">🗽</div>
+    <h1>Carte Interactive<br><span>New York</span></h1>
+    <p class="login-sub">Connectez-vous pour ajouter des lieux et créer vos journées.</p>
+    <label>Prénom
+      <input type="text" id="username" autocomplete="username" placeholder="axel, simon, bastien ou leo" required>
+    </label>
+    <label>Mot de passe
+      <input type="password" id="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
+    <p class="login-error" id="loginError" hidden></p>
+    <button type="button" class="btn-link" id="guestBtn">Continuer sans compte (lecture seule)</button>
+  </form>
+</div>
+
+<header class="topbar">
+  <div class="brand">🗽 <strong>New York</strong> <span class="brand-sub">carte &amp; itinéraires</span></div>
+  <div class="topbar-right">
+    <span class="mode-badge" id="modeBadge" title="Mode de stockage"></span>
+    <span class="user-chip" id="userChip"></span>
+    <button class="btn btn-ghost" id="logoutBtn">Déconnexion</button>
+    <button class="btn btn-ghost mobile-only" id="panelToggle">☰</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel" id="panel">
+    <nav class="tabs">
+      <button class="tab active" data-tab="lieux">Lieux</button>
+      <button class="tab" data-tab="journee">Ma journée</button>
+      <button class="tab" data-tab="itineraire">Itinéraire</button>
+      <button class="tab" data-tab="sauvegardes">Sauvegardes</button>
+    </nav>
+
+    <!-- ---------------------------- LIEUX ---------------------------- -->
+    <section class="tab-panel active" data-panel="lieux">
+      <div class="search-row">
+        <input type="search" id="search" placeholder="Rechercher un lieu…">
+        <button class="btn btn-primary" id="addPointBtn" title="Ajouter un lieu">+</button>
+      </div>
+      <div class="chips" id="categoryChips"></div>
+      <p class="hint" id="pointsCount"></p>
+      <div class="list" id="pointList"></div>
+    </section>
+
+    <!-- --------------------------- MA JOURNÉE ------------------------- -->
+    <section class="tab-panel" data-panel="journee">
+      <div class="field-grid">
+        <label class="span2">Point de départ (hôtel / logement)
+          <select id="hotelSelect"></select>
+        </label>
+        <label>Début
+          <input type="time" id="startTime" value="09:00">
+        </label>
+        <label>Fin
+          <input type="time" id="endTime" value="22:00">
+        </label>
+        <label>Rythme
+          <select id="pace">
+            <option value="tranquille">Tranquille</option>
+            <option value="normal" selected>Normal</option>
+            <option value="intense">Intense</option>
+          </select>
+        </label>
+        <label>Étapes max
+          <input type="number" id="maxStops" value="7" min="2" max="15">
+        </label>
+      </div>
+      <label class="check"><input type="checkbox" id="mealsCheck" checked> Inclure les pauses déjeuner et dîner</label>
+      <label class="check"><input type="checkbox" id="returnCheck" checked> Revenir à l'hébergement le soir</label>
+
+      <div class="selection-head">
+        <h3>Étapes sélectionnées <span class="count" id="selCount">0</span></h3>
+        <button class="btn-link" id="clearSelection">Tout vider</button>
+      </div>
+      <p class="hint">Glissez-déposez pour réordonner. Ou laissez l'appli choisir pour vous.</p>
+      <ul class="selected-list" id="selectedList"></ul>
+
+      <div class="actions">
+        <button class="btn btn-primary btn-block" id="generateBtn">✨ Générer ma journée</button>
+        <button class="btn btn-block" id="autofillBtn">🎲 Me proposer des lieux</button>
+      </div>
+    </section>
+
+    <!-- --------------------------- ITINÉRAIRE ------------------------- -->
+    <section class="tab-panel" data-panel="itineraire">
+      <div id="itineraryEmpty" class="empty">
+        <p>Aucun itinéraire pour le moment.</p>
+        <p class="hint">Choisissez vos lieux dans « Ma journée » puis cliquez sur <strong>Générer ma journée</strong>.</p>
+      </div>
+      <div id="itineraryContent" hidden>
+        <div class="stats" id="itineraryStats"></div>
+        <div class="warnings" id="itineraryWarnings"></div>
+        <div class="timeline" id="timeline"></div>
+        <div class="export-box">
+          <h3>Exporter</h3>
+          <div class="export-grid">
+            <button class="btn" id="exportGmapsWalk">🚶 Ouvrir dans Google Maps</button>
+            <button class="btn" id="exportGmapsTransit">🚇 Google Maps (transports)</button>
+            <button class="btn" id="exportKml">📥 KML (Google My Maps)</button>
+            <button class="btn" id="exportGpx">📥 GPX</button>
+            <button class="btn" id="copyText">📋 Copier le programme</button>
+            <button class="btn btn-primary" id="saveItineraryBtn">💾 Enregistrer</button>
+          </div>
+          <p class="hint">Google Maps limite un lien à 10 étapes : au-delà, plusieurs liens sont générés.</p>
+          <div id="gmapsLinks" class="gmaps-links"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- -------------------------- SAUVEGARDES ------------------------- -->
+    <section class="tab-panel" data-panel="sauvegardes">
+      <p class="hint">Les journées enregistrées sont visibles par tout le groupe.</p>
+      <div class="list" id="savedList"></div>
+      <div class="export-box">
+        <h3>Exporter tous les lieux</h3>
+        <div class="export-grid">
+          <button class="btn" id="exportAllKml">📥 KML de tous les points</button>
+          <button class="btn" id="exportAllJson">📥 JSON (sauvegarde)</button>
+        </div>
+      </div>
+    </section>
+  </aside>
+
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="map-hint" id="mapHint" hidden>Cliquez sur la carte pour placer le nouveau lieu — <button class="btn-link" id="cancelPlacing">annuler</button></div>
+  </div>
+</main>
+
+<!-- Fiche d'un lieu -->
+<div class="modal" id="pointModal" hidden>
+  <div class="modal-card">
+    <button class="modal-close" id="modalClose">×</button>
+    <h2 id="modalTitle">Nouveau lieu</h2>
+    <form id="pointForm">
+      <label>Nom <input type="text" id="fName" required maxlength="120"></label>
+      <div class="field-grid">
+        <label>Catégorie
+          <select id="fCategory">
+            <option value="monument">Monument</option>
+            <option value="musee">Musée</option>
+            <option value="parc">Parc</option>
+            <option value="vue">Point de vue</option>
+            <option value="quartier">Quartier</option>
+            <option value="food">Restaurant / food</option>
+            <option value="shopping">Shopping</option>
+            <option value="photo">Spot photo</option>
+            <option value="sport">Sport</option>
+            <option value="hotel">Hôtel / logement</option>
+            <option value="autre">Autre</option>
+          </select>
+        </label>
+        <label>Durée de visite (min) <input type="number" id="fDuration" value="45" min="0" max="600" step="5"></label>
+        <label>Ouverture <input type="time" id="fOpen" value="00:00"></label>
+        <label>Fermeture <input type="time" id="fClose" value="23:59"></label>
+        <label>Prix indicatif <input type="text" id="fPrice" maxlength="60" placeholder="gratuit, 25$…"></label>
+        <label>Latitude <input type="number" id="fLat" step="0.000001" required></label>
+        <label>Longitude <input type="number" id="fLng" step="0.000001" required></label>
+      </div>
+      <label>Notes / conseils <textarea id="fDesc" rows="3" maxlength="2000"></textarea></label>
+      <p class="form-error" id="formError" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-danger" id="deletePointBtn" hidden>Supprimer</button>
+        <button type="button" class="btn" id="cancelForm">Annuler</button>
+        <button type="submit" class="btn btn-primary">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
