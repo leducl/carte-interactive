@@ -3,3 +3,5 @@ data/db.json
 data/db.json.*.tmp
 *.log
 .DS_Store
+
+.wrangler/

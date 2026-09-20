@@ -1,0 +1,16 @@
+# Déploiement Cloudflare Workers (plan gratuit).
+name = "carte-interactive-new-york"
+main = "worker/index.js"
+compatibility_date = "2025-06-01"
+
+# Les fichiers de public/ sont servis directement par Cloudflare (pas de code exécuté).
+[assets]
+directory = "public"
+binding = "ASSETS"
+
+# Base SQLite gérée. Remplacer database_id par celui affiché après
+# « wrangler d1 create carte-interactive » (voir DEPLOIEMENT.md).
+[[d1_databases]]
+binding = "DB"
+database_name = "carte-interactive"
+database_id = "à-remplacer"

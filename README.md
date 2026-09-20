@@ -20,25 +20,39 @@ Carte collaborative des lieux à voir à New York, avec **génération automatiq
 > et désactive ces mots de passe, même sur une base déjà créée.
 > Voir [DEPLOIEMENT.md](DEPLOIEMENT.md).
 
-## Lancer le site
+## Lancer le site en local
 
 ```bash
 npm start           # puis ouvrez http://localhost:3000
 ```
 
-Aucune dépendance à installer : le serveur n'utilise que la bibliothèque standard de Node,
-et Leaflet est embarqué dans `public/vendor/`.
+Aucune dépendance à installer pour cette commande : le serveur local n'utilise que la
+bibliothèque standard de Node, et Leaflet est embarqué dans `public/vendor/`.
+(`npm install` n'est nécessaire que pour déployer.)
 
-Pour que tout le groupe y accède depuis n'importe où : **[DEPLOIEMENT.md](DEPLOIEMENT.md)**
-décrit la mise en ligne sur Render pas à pas (`render.yaml` est déjà prêt).
-N'importe quel hébergeur Node fait l'affaire — la commande de démarrage est
-`node server.js`, et la configuration tient en trois variables d'environnement :
+```bash
+npm test            # 39 tests de l'API, le serveur doit tourner
+```
+
+## Mettre en ligne
+
+**[DEPLOIEMENT.md](DEPLOIEMENT.md)** décrit pas à pas la mise en ligne gratuite sur
+Cloudflare Workers + D1 (`wrangler.toml` est déjà prêt) :
+
+```bash
+npm install && npx wrangler login
+npx wrangler d1 create carte-interactive   # coller le database_id dans wrangler.toml
+npx wrangler secret put ACCOUNTS           # les mots de passe, hors du dépôt
+npx wrangler deploy
+```
+
+Configuration :
 
 | Variable | Rôle | Défaut |
 |----------|------|--------|
-| `PORT` | port d'écoute | `3000` |
-| `DB_FILE` | emplacement de la base JSON — à placer sur un **disque persistant** | `data/db.json` |
 | `ACCOUNTS` | comptes et mots de passe, `axel:mdp,simon:mdp` | les 4 comptes ci-dessus |
+| `PORT` | port d'écoute (serveur local uniquement) | `3000` |
+| `DB_FILE` | emplacement de la base JSON (serveur local uniquement) | `data/db.json` |
 
 ## Les deux modes de fonctionnement
 
@@ -46,13 +60,14 @@ Le site détecte automatiquement s'il a un serveur en face :
 
 | | **Mode partagé** (serveur Node) | **Mode local** (site statique) |
 |---|---|---|
-| Déclenché par | `npm start` | GitHub Pages, ou un simple `python3 -m http.server` dans `public/` |
+| Déclenché par | Cloudflare Workers en ligne, ou `npm start` en local | GitHub Pages, ou un simple `python3 -m http.server` dans `public/` |
 | Les points ajoutés | sont visibles **par tout le monde** | restent dans **votre navigateur** |
 | Badge affiché en haut | `partagé` | `local` |
 
 Le workflow `.github/workflows/pages.yml` publie `public/` sur GitHub Pages — pratique pour
 avoir la carte en ligne tout de suite, mais **sans partage entre personnes**.
-Pour que chacun voie les points des autres, il faut faire tourner `server.js` quelque part.
+Pour que chacun voie les points des autres, déployez sur Cloudflare (voir ci-dessous)
+et communiquez cette URL-là au groupe.
 
 ## Ce que fait le site
 
@@ -108,10 +123,18 @@ le jour J.
 ## Structure
 
 ```
-server.js              API + fichiers statiques (aucune dépendance)
-render.yaml            blueprint de déploiement Render
+server.js              serveur de développement local (aucune dépendance)
+worker/index.js        point d'entrée Cloudflare Workers
+wrangler.toml          configuration du déploiement Cloudflare
+src/
+  api.js               routes et validation — partagées par les deux serveurs
+  auth.js              hachage des mots de passe (WebCrypto, Node et Workers)
+  store-json.js        stockage fichier JSON (local)
+  store-d1.js          stockage Cloudflare D1 (production)
+  seed.js              chargement des 47 lieux dans une base vide
+test/run.js            tests de l'API, exécutables contre les deux serveurs
 data/poi-seed.json     les 47 lieux préchargés
-data/db.json           base générée au premier lancement (non versionnée)
+data/db.json           base locale, créée au premier lancement (non versionnée)
 public/
   index.html style.css
   js/app.js            interface, carte, formulaires

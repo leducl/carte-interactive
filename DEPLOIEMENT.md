@@ -1,48 +1,79 @@
-# Mettre le site en ligne sur Render
+# Mettre le site en ligne — gratuitement
 
-Objectif : que vous quatre voyiez **les mêmes points** depuis n'importe quel téléphone.
+Objectif : que vous quatre voyiez **les mêmes points** depuis n'importe quel téléphone,
+sans rien payer.
 
-## Avant de commencer : le plan Render
+## Pourquoi Cloudflare et pas Render
 
-| Plan | Prix | Ce que ça donne |
-|------|------|-----------------|
-| **Starter** | ~7 $/mois | Disque persistant → **vos points sont conservés**. C'est ce qu'il vous faut. |
-| Free | 0 € | Pas de disque persistant : **tout est effacé** à chaque redémarrage (et le service s'endort après 15 min d'inactivité). |
+Render gratuit n'a pas de disque persistant : la base repart de zéro à chaque
+redémarrage, vous perdriez les lieux ajoutés. Et le service s'endort après 15 min
+d'inactivité, avec ~50 s de réveil — pénible depuis un téléphone à New York.
 
-Le plan gratuit ne convient pas ici : sans disque, la base repart de zéro régulièrement et vous
-perdriez les lieux ajoutés. Le fichier `render.yaml` est donc configuré en `starter`.
-Comptez ~7 $/mois, résiliable — pour un voyage, quelques mois suffisent.
+Cloudflare Workers + D1 (leur base SQLite gérée) n'a ni l'un ni l'autre de ces défauts,
+et reste gratuit très au-delà de votre usage :
+
+| | Offert gratuitement | Votre usage réel |
+|---|---|---|
+| Requêtes | 100 000 / jour | quelques centaines |
+| Stockage D1 | 5 Go | moins de 1 Mo |
+| Lignes lues | 5 000 000 / jour | quelques milliers |
+
+Aucune carte bancaire n'est demandée pour le plan gratuit.
 
 ## Les étapes
 
-### 1. Fusionner la branche
-Le blueprint doit être sur `main` :
+Tout se passe dans un terminal, depuis le dossier du projet.
+
+### 1. Installer l'outil Cloudflare
 ```bash
-git checkout main
-git merge claude/nyc-interactive-itinerary-site-iicvhv
-git push origin main
+npm install
 ```
 
-### 2. Créer le service
-1. Aller sur https://dashboard.render.com → **New** → **Blueprint**
-2. Connecter le compte GitHub, choisir le dépôt **`leducl/carte-interactive`**
-3. Render lit `render.yaml` tout seul et propose le service `carte-interactive-new-york`
-4. Il demande la valeur de la variable **`ACCOUNTS`** (elle n'est pas dans le dépôt, exprès).
-   Collez cette ligne :
+### 2. Se connecter à Cloudflare
+```bash
+npx wrangler login
+```
+Ça ouvre le navigateur. Créez un compte gratuit si vous n'en avez pas.
 
-   ```
-   axel:Brooklyn-76,simon:Chelsea-31,bastien:Harlem-94,leo:Empire-28
-   ```
+### 3. Créer la base de données
+```bash
+npx wrangler d1 create carte-interactive
+```
+La commande affiche un bloc contenant un `database_id`. **Copiez cet identifiant
+dans `wrangler.toml`**, à la place de `à-remplacer` :
 
-5. **Apply** / **Create**
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "carte-interactive"
+database_id = "0123abcd-..."   # ← ici
+```
 
-### 3. Attendre
-Le premier déploiement prend 1 à 2 minutes (aucune dépendance à installer).
-L'URL ressemblera à `https://carte-interactive-new-york.onrender.com`.
+### 4. Définir les mots de passe
+```bash
+npx wrangler secret put ACCOUNTS
+```
+Wrangler propose de créer le Worker s'il n'existe pas encore : répondez oui.
+Puis collez cette ligne quand il demande la valeur :
 
-### 4. Vérifier
+```
+axel:Brooklyn-76,simon:Chelsea-31,bastien:Harlem-94,leo:Empire-28
+```
+
+> Faites bien cette étape **avant** le déploiement : sinon le site démarre avec les
+> mots de passe du README, qui sont publics.
+
+### 5. Déployer
+```bash
+npx wrangler deploy
+```
+
+L'URL s'affiche à la fin, du type
+`https://carte-interactive-new-york.<votre-compte>.workers.dev`.
+
+### 6. Vérifier
 Ouvrez l'URL, connectez-vous. Le badge en haut à droite doit afficher **`partagé`**
-(et non `local`) : c'est la preuve que le serveur répond et que les points sont communs.
+(et non `local`) : c'est la preuve que les points sont communs à tout le groupe.
 
 ## Les mots de passe en ligne
 
@@ -53,30 +84,56 @@ Ouvrez l'URL, connectez-vous. Le badge en haut à droite doit afficher **`partag
 | `bastien`   | `Harlem-94`   |
 | `leo`       | `Empire-28`   |
 
-Ceux du README (`axel2026`…) ne fonctionnent **que** en local. Dès que `ACCOUNTS` est
-défini sur Render, ils sont automatiquement désactivés, même si le service avait
-déjà démarré sans.
+Ceux du README (`axel2026`…) ne fonctionnent **que** en local. Dès que le secret
+`ACCOUNTS` est défini, ils sont désactivés automatiquement, même si le site avait
+déjà tourné sans.
 
 ### Changer un mot de passe plus tard
-Render → votre service → **Environment** → modifier `ACCOUNTS` → **Save**.
-Le service redémarre, le nouveau mot de passe s'applique et les sessions ouvertes
-avec l'ancien sont déconnectées. **Vos lieux et itinéraires sont conservés.**
+```bash
+npx wrangler secret put ACCOUNTS
+```
+Collez la nouvelle liste. C'est immédiat, sans redéploiement. Les sessions ouvertes
+avec l'ancien mot de passe sont déconnectées, et **vos lieux sont conservés**.
 
 Retirer un prénom de la liste supprime son compte. Ajouter `mathis:Tribeca-55`
 crée un cinquième compte.
 
-## Ce qui est conservé, ce qui ne l'est pas
+### Mettre à jour le site après une modification du code
+```bash
+npx wrangler deploy
+```
+Les données ne sont pas touchées : elles vivent dans D1, pas dans le code.
 
-Conservé à chaque redéploiement (c'est le rôle du disque monté sur `/var/data`) :
-les lieux ajoutés, les modifications, les journées enregistrées, les sessions ouvertes.
+## Sauvegarde
 
-Si vous supprimez le disque dans Render, **tout repart des 47 lieux d'origine**.
-Pensez à faire un export JSON de temps en temps (onglet « Sauvegardes ») avant
-toute manipulation sur le disque.
+Les données sont dans D1, chez Cloudflare. Pour en garder une copie :
+onglet **Sauvegardes** du site → **JSON (sauvegarde)**. À faire avant toute
+manipulation risquée.
 
-## Alternative gratuite
+En ligne de commande :
+```bash
+npx wrangler d1 export carte-interactive --remote --output=sauvegarde.sql
+```
 
-Si vous ne voulez rien payer : gardez GitHub Pages (déjà configuré, workflow
-`.github/workflows/pages.yml`). Le site marche, mais **chacun ne verra que ses
-propres ajouts** — pas de partage. C'est acceptable si une seule personne
-prépare l'itinéraire et l'exporte ensuite vers Google Maps pour le groupe.
+## ⚠️ Attention aux deux URL
+
+Le dépôt contient aussi un workflow GitHub Pages (`.github/workflows/pages.yml`),
+qui publie une version **statique** du site. Celle-ci fonctionne, mais chacun n'y voit
+que ses propres ajouts (badge `local`) — pas de partage.
+
+Une fois Cloudflare en place, utilisez **uniquement l'URL `workers.dev`** et
+communiquez celle-là au groupe, pour éviter que quelqu'un ajoute des lieux sur la
+mauvaise et les perde. Si vous préférez supprimer complètement la version GitHub
+Pages, effacez `.github/workflows/pages.yml` et désactivez Pages dans les réglages
+du dépôt.
+
+## En cas de problème
+
+**« database_id à-remplacer »** — l'étape 3 n'a pas été faite, ou l'identifiant n'a
+pas été collé dans `wrangler.toml`.
+
+**Le badge affiche `local`** — le Worker ne répond pas sur `/api/points`.
+Vérifiez les journaux : `npx wrangler tail`.
+
+**Les anciens mots de passe marchent encore** — le secret `ACCOUNTS` n'est pas défini.
+Vérifiez avec `npx wrangler secret list`.
