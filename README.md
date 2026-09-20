@@ -14,10 +14,11 @@ Carte collaborative des lieux à voir à New York, avec **génération automatiq
 | `bastien`   | `bastien2026`|
 | `leo`       | `leo2026`    |
 
-> ⚠️ Ces mots de passe sont volontairement simples et **écrits en clair dans ce dépôt**.
-> Ils conviennent à une carte de vacances entre amis, pas à des données sensibles.
-> Pour les changer : modifiez `ACCOUNTS` en haut de `server.js` (et `LOCAL_ACCOUNTS`
-> dans `public/js/api.js` pour le mode statique), puis supprimez `data/db.json`.
+> ⚠️ Ces mots de passe sont **écrits en clair dans ce dépôt** : ils servent uniquement
+> en local. Pour une mise en ligne, définissez la variable d'environnement `ACCOUNTS`
+> (format `axel:motdepasse,simon:autre`) — elle remplace entièrement la liste ci-dessus
+> et désactive ces mots de passe, même sur une base déjà créée.
+> Voir [DEPLOIEMENT.md](DEPLOIEMENT.md).
 
 ## Lancer le site
 
@@ -28,9 +29,16 @@ npm start           # puis ouvrez http://localhost:3000
 Aucune dépendance à installer : le serveur n'utilise que la bibliothèque standard de Node,
 et Leaflet est embarqué dans `public/vendor/`.
 
-Pour que tout le groupe y accède depuis n'importe où, déployez ce dossier sur n'importe
-quel hébergeur Node (Render, Railway, Fly.io, un petit VPS…) — la commande de démarrage
-est `node server.js` et le port se règle via la variable `PORT`.
+Pour que tout le groupe y accède depuis n'importe où : **[DEPLOIEMENT.md](DEPLOIEMENT.md)**
+décrit la mise en ligne sur Render pas à pas (`render.yaml` est déjà prêt).
+N'importe quel hébergeur Node fait l'affaire — la commande de démarrage est
+`node server.js`, et la configuration tient en trois variables d'environnement :
+
+| Variable | Rôle | Défaut |
+|----------|------|--------|
+| `PORT` | port d'écoute | `3000` |
+| `DB_FILE` | emplacement de la base JSON — à placer sur un **disque persistant** | `data/db.json` |
+| `ACCOUNTS` | comptes et mots de passe, `axel:mdp,simon:mdp` | les 4 comptes ci-dessus |
 
 ## Les deux modes de fonctionnement
 
@@ -101,6 +109,7 @@ le jour J.
 
 ```
 server.js              API + fichiers statiques (aucune dépendance)
+render.yaml            blueprint de déploiement Render
 data/poi-seed.json     les 47 lieux préchargés
 data/db.json           base générée au premier lancement (non versionnée)
 public/

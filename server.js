@@ -14,12 +14,32 @@ const DB_FILE = process.env.DB_FILE || path.join(DATA_DIR, 'db.json');
 const SEED_FILE = path.join(DATA_DIR, 'poi-seed.json');
 
 // Les 4 comptes de l'équipe, avec des mots de passe volontairement simples.
-const ACCOUNTS = {
+// En production, définissez la variable d'environnement ACCOUNTS pour les remplacer,
+// au format « axel:motdepasse,simon:autremotdepasse ».
+const DEFAULT_ACCOUNTS = {
   axel: 'axel2026',
   simon: 'simon2026',
   bastien: 'bastien2026',
   leo: 'leo2026',
 };
+
+function parseAccounts(raw) {
+  const parsed = {};
+  for (const entry of raw.split(',')) {
+    const separator = entry.indexOf(':');
+    if (separator < 1) continue;
+    const name = entry.slice(0, separator).trim().toLowerCase();
+    const password = entry.slice(separator + 1).trim();
+    if (name && password) parsed[name] = password;
+  }
+  return parsed;
+}
+
+const ACCOUNTS = process.env.ACCOUNTS ? parseAccounts(process.env.ACCOUNTS) : DEFAULT_ACCOUNTS;
+if (!Object.keys(ACCOUNTS).length) {
+  console.error('ACCOUNTS est défini mais illisible. Format attendu : « axel:motdepasse,simon:autre ».');
+  process.exit(1);
+}
 
 /* ------------------------------------------------------------------ */
 /* Base de données (un simple fichier JSON, écrit de façon atomique)    */
@@ -61,7 +81,9 @@ function loadSeed() {
 }
 
 function initDb() {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  // DB_FILE peut pointer hors du dépôt (disque persistant d'un hébergeur) :
+  // on crée son dossier, pas seulement data/.
+  fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
   if (fs.existsSync(DB_FILE)) {
     db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
   } else {
@@ -71,21 +93,49 @@ function initDb() {
   db.points = db.points || [];
   db.itineraries = db.itineraries || [];
   db.sessions = db.sessions || {};
-  // (Re)crée les comptes manquants sans toucher à ceux qui existent déjà.
-  for (const [name, password] of Object.entries(ACCOUNTS)) {
-    if (!db.users[name]) db.users[name] = { name, hash: hashPassword(password) };
-  }
+  syncAccounts();
   save();
+}
+
+/**
+ * Aligne les comptes stockés sur la configuration courante : création des comptes
+ * manquants, mise à jour des mots de passe modifiés, suppression de ceux qui ne sont
+ * plus listés. Sans cela, changer ACCOUNTS après le premier démarrage laisserait les
+ * anciens mots de passe utilisables.
+ */
+function syncAccounts() {
+  for (const [name, password] of Object.entries(ACCOUNTS)) {
+    const existing = db.users[name];
+    if (!existing || !checkPassword(password, existing.hash)) {
+      db.users[name] = { name, hash: hashPassword(password) };
+      if (existing) revokeSessions(name);
+    }
+  }
+  for (const name of Object.keys(db.users)) {
+    if (!ACCOUNTS[name]) {
+      delete db.users[name];
+      revokeSessions(name);
+    }
+  }
+}
+
+function revokeSessions(user) {
+  for (const [token, session] of Object.entries(db.sessions)) {
+    if (session.user === user) delete db.sessions[token];
+  }
 }
 
 function save() {
   const snapshot = JSON.stringify(db, null, 2);
-  writeQueue = writeQueue.then(async () => {
+  const done = writeQueue.then(async () => {
     const tmp = `${DB_FILE}.${process.pid}.tmp`;
     await fsp.writeFile(tmp, snapshot);
     await fsp.rename(tmp, DB_FILE);
-  }).catch((err) => console.error('Écriture de la base impossible :', err));
-  return writeQueue;
+  });
+  // La file continue même après un échec, mais l'appelant, lui, voit l'erreur
+  // et peut répondre 500 au lieu de confirmer une écriture perdue.
+  writeQueue = done.catch((err) => console.error('Écriture de la base impossible :', err));
+  return done;
 }
 
 /* ------------------------------------------------------------------ */
@@ -196,7 +246,7 @@ async function handleApi(req, res, url) {
     }
     const token = crypto.randomBytes(24).toString('hex');
     db.sessions[token] = { user: name, createdAt: Date.now() };
-    save();
+    await save();
     return send(res, 200, { token, user: name });
   }
 
@@ -205,7 +255,7 @@ async function handleApi(req, res, url) {
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
     if (token && db.sessions[token]) {
       delete db.sessions[token];
-      save();
+      await save();
     }
     return send(res, 200, { ok: true });
   }
@@ -229,7 +279,7 @@ async function handleApi(req, res, url) {
     }
     const point = { id: crypto.randomUUID(), ...fields, author: user, createdAt: new Date().toISOString() };
     db.points.push(point);
-    save();
+    await save();
     return send(res, 201, { point });
   }
 
@@ -247,13 +297,13 @@ async function handleApi(req, res, url) {
         return send(res, 400, { error: err.message });
       }
       db.points[index] = { ...db.points[index], ...fields, updatedAt: new Date().toISOString(), updatedBy: user };
-      save();
+      await save();
       return send(res, 200, { point: db.points[index] });
     }
 
     if (method === 'DELETE') {
       const [removed] = db.points.splice(index, 1);
-      save();
+      await save();
       return send(res, 200, { deleted: removed.id });
     }
   }
@@ -277,7 +327,7 @@ async function handleApi(req, res, url) {
     };
     db.itineraries.unshift(itinerary);
     db.itineraries = db.itineraries.slice(0, 200);
-    save();
+    await save();
     return send(res, 201, { itinerary });
   }
 
@@ -287,7 +337,7 @@ async function handleApi(req, res, url) {
     const index = db.itineraries.findIndex((i) => i.id === itiMatch[1]);
     if (index === -1) return send(res, 404, { error: 'Itinéraire introuvable.' });
     db.itineraries.splice(index, 1);
-    save();
+    await save();
     return send(res, 200, { ok: true });
   }
 
@@ -339,7 +389,12 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`\n  🗽 Carte Interactive New York — http://localhost:${PORT}\n`);
-  console.log('  Comptes disponibles :');
-  for (const [name, pwd] of Object.entries(ACCOUNTS)) console.log(`    ${name.padEnd(9)} → ${pwd}`);
+  if (process.env.NODE_ENV === 'production') {
+    console.log(`  ${Object.keys(ACCOUNTS).length} comptes : ${Object.keys(ACCOUNTS).join(', ')}`);
+    console.log(`  Base de données : ${DB_FILE}`);
+  } else {
+    console.log('  Comptes disponibles :');
+    for (const [name, pwd] of Object.entries(ACCOUNTS)) console.log(`    ${name.padEnd(9)} → ${pwd}`);
+  }
   console.log('');
 });

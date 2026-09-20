@@ -1,0 +1,21 @@
+# Blueprint Render : https://render.com/docs/blueprint-spec
+# Déploiement en un clic depuis le dépôt (Render → New → Blueprint).
+services:
+  - type: web
+    name: carte-interactive-new-york
+    runtime: node
+    plan: starter          # « starter » est requis : le plan gratuit n'autorise pas de disque persistant.
+    buildCommand: ""       # aucune dépendance à installer
+    startCommand: node server.js
+    healthCheckPath: /api/points
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_FILE
+        value: /var/data/db.json   # sur le disque persistant, pas dans le conteneur
+      - key: ACCOUNTS
+        sync: false                # à saisir dans l'interface Render, jamais dans le dépôt
+    disk:
+      name: donnees
+      mountPath: /var/data
+      sizeGB: 1
